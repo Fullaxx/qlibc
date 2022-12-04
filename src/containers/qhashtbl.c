@@ -95,7 +95,6 @@
 #include <assert.h>
 #include <errno.h>
 #include "qinternal.h"
-#include "utilities/qhash.h"
 #include "containers/qhashtbl.h"
 
 #define DEFAULT_INDEX_RANGE (1000)  /*!< default value of hash-index range */
@@ -203,7 +202,7 @@ bool qhashtbl_put(qhashtbl_t *tbl, const char *name, const void *data,
     }
 
     // get hash integer
-    uint32_t hash = qhashmurmur3_32(name, strlen(name));
+    uint64_t hash = XXH64(name, strlen(name), 0);
     int idx = hash % tbl->range;
 
     qhashtbl_lock(tbl);
@@ -366,7 +365,7 @@ void *qhashtbl_get(qhashtbl_t *tbl, const char *name, size_t *size, bool newmem)
         return NULL;
     }
 
-    uint32_t hash = qhashmurmur3_32(name, strlen(name));
+    uint64_t hash = XXH64(name, strlen(name), 0);
     int idx = hash % tbl->range;
 
     qhashtbl_lock(tbl);
@@ -466,7 +465,7 @@ bool qhashtbl_remove(qhashtbl_t *tbl, const char *name) {
 
     qhashtbl_lock(tbl);
 
-    uint32_t hash = qhashmurmur3_32(name, strlen(name));
+    uint64_t hash = XXH64(name, strlen(name), 0);
     int idx = hash % tbl->range;
 
     // find key
@@ -663,7 +662,7 @@ bool qhashtbl_debug(qhashtbl_t *tbl, FILE *out) {
     while (tbl->getnext(tbl, &obj, false) == true) {
         fprintf(out, "%s=", obj.name);
         _q_textout(out, obj.data, obj.size, MAX_HUMANOUT);
-        fprintf(out, " (%zu, %08x)\n", obj.size, obj.hash);
+        fprintf(out, " (%zu, %08lx)\n", obj.size, obj.hash);
     }
     qhashtbl_unlock(tbl);
 
