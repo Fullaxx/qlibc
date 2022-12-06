@@ -39,7 +39,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "utilities/xxhash.c"
+
+#include "utilities/xxhash.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -121,8 +122,8 @@ struct qhashtbl_s {
  * qhashtbl object data structure
  */
 struct qhashtbl_obj_s {
-    XXH64_hash_t hash;  /*!< 64bit-hash value of object name */
-    char *name;         /*!< object name */
+    XXH128_hash_t hash;  /*!< 128bit-hash value of object name */
+    //char *name;         /*!< object name */
     void *data;         /*!< data */
     size_t size;        /*!< data size */
 

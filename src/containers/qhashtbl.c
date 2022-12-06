@@ -96,6 +96,7 @@
 #include <errno.h>
 #include "qinternal.h"
 #include "containers/qhashtbl.h"
+#include "utilities/xxhash.c"
 
 #define DEFAULT_INDEX_RANGE (1000)  /*!< default value of hash-index range */
 
@@ -202,24 +203,24 @@ bool qhashtbl_put(qhashtbl_t *tbl, const char *name, const void *data,
     }
 
     // get hash integer
-    uint64_t hash = XXH64(name, strlen(name), 0);
-    int idx = hash % tbl->range;
+    XXH128_hash_t hash = XXH3_128bits(name, strlen(name));
+    int idx = hash.low64 % tbl->range;
 
     qhashtbl_lock(tbl);
 
     // find existence key
     qhashtbl_obj_t *obj;
     for (obj = tbl->slots[idx]; obj != NULL; obj = obj->next) {
-        if (obj->hash == hash && !strcmp(obj->name, name)) {
+        if (!memcmp(&obj->hash, &hash, sizeof(hash))) {
             break;
         }
     }
 
     // duplicate object
-    char *dupname = strdup(name);
+    //BAK char *dupname = strdup(name);
     void *dupdata = malloc(size);
-    if (dupname == NULL || dupdata == NULL) {
-        free(dupname);
+    if (dupdata == NULL) {
+        //BAK free(dupname);
         free(dupdata);
         qhashtbl_unlock(tbl);
         errno = ENOMEM;
@@ -232,7 +233,7 @@ bool qhashtbl_put(qhashtbl_t *tbl, const char *name, const void *data,
         // insert
         obj = (qhashtbl_obj_t *) calloc(1, sizeof(qhashtbl_obj_t));
         if (obj == NULL) {
-            free(dupname);
+            //BAK free(dupname);
             free(dupdata);
             qhashtbl_unlock(tbl);
             errno = ENOMEM;
@@ -249,13 +250,14 @@ bool qhashtbl_put(qhashtbl_t *tbl, const char *name, const void *data,
         tbl->num++;
     } else {
         // replace
-        free(obj->name);
+        //BAK free(obj->name);
         free(obj->data);
     }
 
     // set data
     obj->hash = hash;
-    obj->name = dupname;
+    memcpy(&obj->hash, &hash, sizeof(hash));
+    //BAK obj->name = dupname;
     obj->data = dupdata;
     obj->size = size;
 
@@ -365,15 +367,15 @@ void *qhashtbl_get(qhashtbl_t *tbl, const char *name, size_t *size, bool newmem)
         return NULL;
     }
 
-    uint64_t hash = XXH64(name, strlen(name), 0);
-    int idx = hash % tbl->range;
+    XXH128_hash_t hash = XXH3_128bits(name, strlen(name));
+    int idx = hash.low64 % tbl->range;
 
     qhashtbl_lock(tbl);
 
     // find key
     qhashtbl_obj_t *obj;
     for (obj = tbl->slots[idx]; obj != NULL; obj = obj->next) {
-        if (obj->hash == hash && !strcmp(obj->name, name)) {
+        if (!memcmp(&obj->hash, &hash, sizeof(hash))) {
             break;
         }
     }
@@ -465,15 +467,15 @@ bool qhashtbl_remove(qhashtbl_t *tbl, const char *name) {
 
     qhashtbl_lock(tbl);
 
-    uint64_t hash = XXH64(name, strlen(name), 0);
-    int idx = hash % tbl->range;
+    XXH128_hash_t hash = XXH3_128bits(name, strlen(name));
+    int idx = hash.low64 % tbl->range;
 
     // find key
     bool found = false;
     qhashtbl_obj_t *prev = NULL;
     qhashtbl_obj_t *obj;
     for (obj = tbl->slots[idx]; obj != NULL; obj = obj->next) {
-        if (obj->hash == hash && !strcmp(obj->name, name)) {
+        if (!memcmp(&obj->hash, &hash, sizeof(hash))) {
             // adjust link
             if (prev == NULL)
                 tbl->slots[idx] = obj->next;
@@ -481,7 +483,7 @@ bool qhashtbl_remove(qhashtbl_t *tbl, const char *name) {
                 prev->next = obj->next;
 
             // remove
-            free(obj->name);
+            //BAK free(obj->name);
             free(obj->data);
             free(obj);
 
@@ -551,8 +553,8 @@ bool qhashtbl_getnext(qhashtbl_t *tbl, qhashtbl_obj_t *obj, const bool newmem) {
 
     qhashtbl_obj_t *cursor = NULL;
     int idx = 0;
-    if (obj->name != NULL) {
-        idx = (obj->hash % tbl->range) + 1;
+    if (obj->hash.low64 | obj->hash.high64) {
+        idx = (obj->hash.low64 % tbl->range) + 1;
         cursor = obj->next;
     }
 
@@ -572,11 +574,11 @@ bool qhashtbl_getnext(qhashtbl_t *tbl, qhashtbl_obj_t *obj, const bool newmem) {
 
     if (cursor != NULL) {
         if (newmem == true) {
-            obj->name = strdup(cursor->name);
+            //BAK obj->name = strdup(cursor->name);
             obj->data = malloc(cursor->size);
-            if (obj->name == NULL || obj->data == NULL) {
+            if (obj->data == NULL) {
                 DEBUG("getnext(): Unable to allocate memory.");
-                free(obj->name);
+                //BAK free(obj->name);
                 free(obj->data);
                 qhashtbl_unlock(tbl);
                 errno = ENOMEM;
@@ -585,13 +587,12 @@ bool qhashtbl_getnext(qhashtbl_t *tbl, qhashtbl_obj_t *obj, const bool newmem) {
             memcpy(obj->data, cursor->data, cursor->size);
             obj->size = cursor->size;
         } else {
-            obj->name = cursor->name;
+            //BAK obj->name = cursor->name;
             obj->data = cursor->data;
         }
-        obj->hash = cursor->hash;
+        memcpy(&obj->hash, &cursor->hash, sizeof(cursor->hash));
         obj->size = cursor->size;
         obj->next = cursor->next;
-
     }
 
     qhashtbl_unlock(tbl);
@@ -628,7 +629,7 @@ void qhashtbl_clear(qhashtbl_t *tbl) {
         tbl->slots[idx] = NULL;
         while (obj != NULL) {
             qhashtbl_obj_t *next = obj->next;
-            free(obj->name);
+            //BAK free(obj->name);
             free(obj->data);
             free(obj);
             obj = next;
@@ -660,9 +661,9 @@ bool qhashtbl_debug(qhashtbl_t *tbl, FILE *out) {
     memset((void *) &obj, 0, sizeof(obj));  // must be cleared before call
     qhashtbl_lock(tbl);
     while (tbl->getnext(tbl, &obj, false) == true) {
-        fprintf(out, "%s=", obj.name);
+        //BAK fprintf(out, "%s=", obj.name);
         _q_textout(out, obj.data, obj.size, MAX_HUMANOUT);
-        fprintf(out, " (%zu, %08lx)\n", obj.size, obj.hash);
+        fprintf(out, " (%zu, %08lx%08lx)\n", obj.size, obj.hash.high64, obj.hash.low64);
     }
     qhashtbl_unlock(tbl);
 
